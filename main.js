@@ -16,7 +16,7 @@ class Config {
     }
 
     static get SNAKE_COLOR() {
-        return 'green'; // Color of the snake
+        return 'blue'; // Color of the snake
     }
 
     static get SNAKE_BORDER_COLOR() {
@@ -32,7 +32,7 @@ class Config {
     }
 
     static get SNAKE_STEP_COUNT() {
-        return Config.SMOOTH_ANIMATION ? 4 : 1; // Number of steps for smooth movement
+        return Config.SMOOTH_ANIMATION ? 4 : 0.75; // Number of steps for smooth movement
     }
 
     static get SMOOTH_ANIMATION() {
