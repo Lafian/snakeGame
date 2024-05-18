@@ -12,7 +12,7 @@ class Config {
     }
 
     static get UPDATE_INTERVAL() {
-        return 100; // Update interval in milliseconds
+        return Config.SMOOTH_ANIMATION ? 1 : 50; // Update interval in milliseconds
     }
 
     static get SNAKE_COLOR() {
@@ -29,6 +29,18 @@ class Config {
 
     static get FOOD_BORDER_COLOR() {
         return 'darkred'; // Border color of the food
+    }
+
+    static get SNAKE_STEP_COUNT() {
+        return Config.SMOOTH_ANIMATION ? 4 : 1; // Number of steps for smooth movement
+    }
+
+    static get SMOOTH_ANIMATION() {
+        return true; // Switch for smooth animation; set to false for default animation
+    }
+
+    static get SCORE_INCREMENT() {
+        return 10; // Points added to score when snake eats food
     }
 }
 
@@ -53,9 +65,13 @@ class Board {
     }
 
     drawSnake(snake) {
-        this.context.fillStyle = Config.SNAKE_COLOR;
-        this.context.strokeStyle = Config.SNAKE_BORDER_COLOR;
-        snake.position.forEach(segment => {
+        const segments = snake.getSegments();
+        const length = segments.length;
+
+        segments.forEach((segment, index) => {
+            const opacity = (length - index) / length;
+            this.context.fillStyle = `rgba(0, 128, 0, ${opacity})`; // Green with varying opacity
+            this.context.strokeStyle = Config.SNAKE_BORDER_COLOR;
             this.context.fillRect(segment.x * this.cellSize, segment.y * this.cellSize, this.cellSize, this.cellSize);
             this.context.strokeRect(segment.x * this.cellSize, segment.y * this.cellSize, this.cellSize, this.cellSize);
         });
@@ -80,7 +96,6 @@ class Food {
         this.position = this.generateNewPosition();
     }
 
-    // Generate a new position for the food
     generateNewPosition() {
         const gridSize = this.board.getGridSize();
         const x = Math.floor(Math.random() * gridSize);
@@ -89,7 +104,6 @@ class Food {
         return this.position;
     }
 
-    // Get the current position of the food
     getPosition() {
         return this.position;
     }
@@ -107,22 +121,19 @@ class Game {
         this.updateInterval = Config.UPDATE_INTERVAL;
         this.score = 0;
 
-        // Bind methods
         this.gameLoop = this.gameLoop.bind(this);
         this.handleInput = this.handleInput.bind(this);
         this.updateScore = this.updateScore.bind(this);
 
-        // Set up input handler
         this.inputHandler.setGame(this);
 
-        // Set up UI event listeners
         document.getElementById('startButton').addEventListener('click', () => this.start());
         document.getElementById('pauseButton').addEventListener('click', () => this.pause());
         document.getElementById('resetButton').addEventListener('click', () => this.reset());
     }
 
     start() {
-        if (this.gameInterval) return; // Game already running
+        if (this.gameInterval) return;
         this.isPaused = false;
         this.isGameOver = false;
         this.gameInterval = setInterval(this.gameLoop, this.updateInterval);
@@ -162,17 +173,15 @@ class Game {
     update() {
         this.snake.move();
 
-        // Check for collisions
         if (this.snake.checkCollisionWithWalls(this.board) || this.snake.checkCollisionWithSelf()) {
             this.isGameOver = true;
             return;
         }
 
-        // Check if snake has eaten the food
         if (this.snake.getHeadPosition().equals(this.food.getPosition())) {
             this.snake.grow();
             this.food.generateNewPosition();
-            this.score += 10; // Increment score by 10
+            this.score += Config.SCORE_INCREMENT;
             this.updateScore();
         }
     }
@@ -197,27 +206,37 @@ class InputHandler {
             ArrowUp: 'up',
             ArrowDown: 'down',
             ArrowLeft: 'left',
-            ArrowRight: 'right'
+            ArrowRight: 'right',
+            Enter: 'ok',
+            // Add more mappings if needed
         };
         this.game = null;
         this.init();
     }
 
-    // Initialize event listeners
     init() {
         document.addEventListener('keydown', (event) => this.handleKeyPress(event));
     }
 
-    // Set the game instance to interact with
     setGame(game) {
         this.game = game;
     }
 
-    // Handle key press events
     handleKeyPress(event) {
         const direction = this.keyMap[event.key];
         if (direction && this.game) {
-            this.game.handleInput(direction);
+            if (direction === 'ok') {
+                // Handle OK button press (start/pause/reset)
+                if (this.game.isPaused) {
+                    this.game.start();
+                } else if (this.game.isGameOver) {
+                    this.game.reset();
+                } else {
+                    this.game.pause();
+                }
+            } else {
+                this.game.handleInput(direction);
+            }
         }
     }
 }
@@ -232,14 +251,26 @@ class Snake {
     reset() {
         this.position = [this.initialPosition];
         this.length = this.initialLength;
-        this.direction = new Vector(0, -1); // Default direction: Up
+        this.direction = new Vector(0, -1);
+        this.intermediatePositions = [];
+        this.step = 0;
+        this.stepsPerMove = Config.SNAKE_STEP_COUNT; // Use value from Config
     }
 
     move() {
-        const newHead = this.position[0].add(this.direction);
-        this.position.unshift(newHead);
-        while (this.position.length > this.length) {
-            this.position.pop();
+        if (this.intermediatePositions.length === 0) {
+            const newHead = this.position[0].add(this.direction);
+            this.intermediatePositions = this.calculateIntermediatePositions(this.position[0], newHead);
+            this.position.unshift(newHead);
+            while (this.position.length > this.length) {
+                this.position.pop();
+            }
+        } else {
+            this.step++;
+            if (this.step >= this.stepsPerMove) {
+                this.intermediatePositions.shift();
+                this.step = 0;
+            }
         }
     }
 
@@ -249,7 +280,6 @@ class Snake {
 
     setDirection(direction) {
         const newDirection = this.getDirectionVector(direction);
-        // Prevent reversing direction
         if (!this.position[1] || !this.position[0].add(newDirection).equals(this.position[1])) {
             this.direction = newDirection;
         }
@@ -279,11 +309,27 @@ class Snake {
     getHeadPosition() {
         return this.position[0];
     }
+
+    getSegments() {
+        if (this.intermediatePositions.length > 0) {
+            return [this.intermediatePositions[0], ...this.position.slice(1)];
+        }
+        return this.position;
+    }
+
+    calculateIntermediatePositions(from, to) {
+        const positions = [];
+        for (let i = 1; i <= this.stepsPerMove; i++) {
+            const x = from.x + (to.x - from.x) * (i / this.stepsPerMove);
+            const y = from.y + (to.y - from.y) * (i / this.stepsPerMove);
+            positions.push(new Vector(x, y));
+        }
+        return positions;
+    }
 }
 
 class Vector {
-    constructor(x, y) {
-        this.x = x;
+    constructor(x, y) {this.x = x;
         this.y = y;
     }
 
@@ -316,8 +362,8 @@ class Resizer {
     }
 
     resizeCanvas() {
-        const width = window.innerWidth;
-        const height = window.innerHeight;
+        const width = window.innerWidth * Config.CANVAS_SCALE;
+        const height = window.innerHeight * Config.CANVAS_SCALE;
         const size = Math.min(width, height);
         this.canvas.width = size;
         this.canvas.height = size;
@@ -430,10 +476,7 @@ class CanvasManager {
     }
 
     handleTouchEnd(event) {
-        // Optional: Implement any logic needed when the touch ends.
-        // For example, could be used to detect tap gestures or finalize swipe actions.
-        // Currently, we'll just log the event to demonstrate functionality.
-        console.log('Touch ended', event);
+        // Optionally handle touch end event
     }
 }
 
